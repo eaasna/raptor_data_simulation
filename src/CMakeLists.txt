@@ -28,3 +28,6 @@ target_link_libraries ("split_sequence" "common_interface")
 
 add_executable ("count_minimiser" count_minimiser.cpp)
 target_link_libraries ("count_minimiser" "common_interface")
+
+add_executable ("apply_taxsbp" apply_taxsbp.cpp)
+target_link_libraries ("apply_taxsbp" "common_interface")
