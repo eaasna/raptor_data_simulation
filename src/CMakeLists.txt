@@ -31,3 +31,6 @@ target_link_libraries ("count_minimiser" "common_interface")
 
 add_executable ("apply_taxsbp" apply_taxsbp.cpp)
 target_link_libraries ("apply_taxsbp" "common_interface")
+
+add_executable ("generate_reads_refseq" generate_reads_refseq.cpp)
+target_link_libraries ("generate_reads_refseq" "common_interface")
