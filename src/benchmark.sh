@@ -25,7 +25,7 @@ do_task () {
     ibf_filename=$working_directory/$w\_$k\_$SIZE.ibf # Does not contain HASH
     build_log=$working_directory/$w\_$k\_$SIZE\_build.log
     echo "Building IBF with ($w, $k)-minimisers with $HASH hashes and of size $SIZE"
-    /usr/bin/time -o $build_log -v
+    /usr/bin/time -o $build_log -v \
         $BINARY_DIR/raptor build \
             --output $ibf_filename \
             --kmer $k \
@@ -38,7 +38,7 @@ do_task () {
     query_log=$working_directory/$w\_$k\_$SIZE\_query.log # Does not contain HASH
     query_out=$working_directory/$w\_$k\_$SIZE.out
     echo "Searching IBF for reads of length $READ_LENGTH containing $ERRORS errors"
-    /usr/bin/time -o $query_log -v
+    /usr/bin/time -o $query_log -v \
         $BINARY_DIR/raptor search \
             --query $working_directory/reads/all.fastq \
             --index $ibf_filename \
