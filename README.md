@@ -1,5 +1,7 @@
 # Raptor utility repository
 
+# Moved to https://github.com/seqan/raptor/tree/master/util
+
 This contains small apps.
 
 ```bash
