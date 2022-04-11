@@ -18,6 +18,8 @@ struct cmd_arguments
     uint32_t read_length{100u};
     uint32_t number_of_reads{1ULL<<20};
     uint16_t number_of_haplotypes{16u};
+
+    bool verbose_ids{false};
 };
 
 void run_program(cmd_arguments const & arguments)
@@ -48,12 +50,12 @@ void run_program(cmd_arguments const & arguments)
                                                    return out_file;
                                                }();
 
-        seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq>> fin{bin_file};
+        seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fin{bin_file};
         seqan3::sequence_file_output fout{out_file};
 
         uint16_t haplotype_counter{};
 
-        for (auto const & [seq] : fin)
+        for (auto const & [seq, reference_name] : fin)
         {
             uint64_t const reference_length = std::ranges::size(seq);
             std::uniform_int_distribution<uint64_t> read_start_dis(0, reference_length - arguments.read_length);
@@ -74,7 +76,19 @@ void run_program(cmd_arguments const & arguments)
                     read[error_pos] = new_base;
                 }
 
-                fout.emplace_back(read, std::to_string(read_counter), quality);
+                std::string query_id = std::to_string(read_counter);
+                std::string meta_info{};
+
+                if (arguments.verbose_ids)
+                {
+                    meta_info += ' ';
+                    meta_info += "start_position=" + std::to_string(read_start_pos);
+                    meta_info += ",length=" + std::to_string(arguments.read_length);
+                    meta_info += ",errors=" + std::to_string(arguments.max_errors);
+                    meta_info += ",reference_id='" + reference_name + "'";
+                    meta_info += ",reference_file='" + std::string{bin_file} + "'";
+                }
+                fout.emplace_back(read, query_id + meta_info, quality);
             }
             ++haplotype_counter;
         }
@@ -121,6 +135,10 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
                       '\0',
                       "number_of_haplotypes",
                       "The number of haplotypes.");
+    parser.add_flag(arguments.verbose_ids,
+        '\0',
+        "verbose-ids",
+        "Puts Position Information into the ID (where the read was sampled from)");
 }
 
 int main(int argc, char ** argv)
