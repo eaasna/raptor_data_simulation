@@ -23,6 +23,9 @@ target_include_directories ("common_interface" INTERFACE ../include)
 add_executable ("generate_reads" generate_reads.cpp)
 target_link_libraries ("generate_reads" "common_interface")
 
+add_executable ("generate_local_matches" generate_local_matches.cpp)
+target_link_libraries ("generate_local_matches" "common_interface")
+
 add_executable ("split_sequence" split_sequence.cpp)
 target_link_libraries ("split_sequence" "common_interface")
 
