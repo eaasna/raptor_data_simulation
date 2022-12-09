@@ -17,6 +17,7 @@ struct cmd_arguments
     uint32_t min_match_length{50u};
     uint32_t max_match_length{200u};
     uint32_t num_matches{1ULL<<20};
+    uint32_t seed{42};
 
     bool verbose_ids{false};
 };
@@ -24,7 +25,8 @@ struct cmd_arguments
 void run_program(cmd_arguments const & arguments)
 {
     std::random_device rd;
-    std::mt19937_64 rng(rd());
+    // std::mt19937_64 rng(rd());
+    std::mt19937_64 rng(arguments.seed);
     std::uniform_int_distribution<uint8_t> dna4_rank_dis(0, 3);
     std::uniform_int_distribution<> match_len_dis(arguments.min_match_length, arguments.max_match_length);
 
@@ -117,6 +119,10 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
                       '\0',
                       "num-matches",
                       "The number of matches.");
+    parser.add_option(arguments.seed,
+                      '\0',
+                      "seed",
+                      "Seed for random generator.");
     parser.add_flag(arguments.verbose_ids,
                       '\0',
                       "verbose-ids",
