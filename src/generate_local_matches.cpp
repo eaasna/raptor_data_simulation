@@ -16,7 +16,8 @@ struct cmd_arguments
     double max_error_rate{0.01};
     uint32_t min_match_length{50u};
     uint32_t max_match_length{200u};
-    uint32_t num_matches{1ULL<<20};
+    uint32_t total_num_matches{1ULL<<20};
+    uint64_t ref_len;
 
     bool verbose_ids{false};
 };
@@ -44,9 +45,15 @@ void run_program(cmd_arguments const & arguments)
 
     for (auto const & [seq, reference_name] : fin)
     {
+	uint32_t num_matches;
+	if (seq.size() < arguments.ref_len - 1)  // if more than one chromosome
+	    num_matches = std::round(arguments.total_num_matches * (double) seq.size() / (double) arguments.ref_len);
+	else 
+	    num_matches = arguments.total_num_matches;
+
         uint64_t const reference_length = std::ranges::size(seq);
         std::uniform_int_distribution<uint64_t> match_start_dis(0, reference_length - arguments.max_match_length);
-        for (uint32_t current_match_number = 0; current_match_number < arguments.num_matches; ++current_match_number, ++match_counter)
+        for (uint32_t current_match_number = 0; current_match_number < num_matches; ++current_match_number, ++match_counter)
         {
             uint32_t match_length = match_len_dis(rng);
             std::vector<seqan3::phred42> const quality(match_length, seqan3::assign_rank_to(40u, seqan3::phred42{}));
@@ -113,10 +120,15 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
                       '\0',
                       "max-match-length",
                       "The maximum match length.");
-    parser.add_option(arguments.num_matches,
+    parser.add_option(arguments.total_num_matches,
                       '\0',
                       "num-matches",
                       "The number of matches.");
+    parser.add_option(arguments.ref_len,
+                      '\0',
+                      "ref-len",
+                      "Length of the reference.",
+		      seqan3::option_spec::required);
     parser.add_flag(arguments.verbose_ids,
                       '\0',
                       "verbose-ids",
