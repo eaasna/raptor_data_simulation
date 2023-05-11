@@ -18,14 +18,21 @@ struct cmd_arguments
     uint32_t read_length{100u};
     uint32_t number_of_reads{1ULL<<20};
     uint16_t number_of_haplotypes{16u};
+    uint64_t seed{0}; // seed for random generator (0 means random device is being used)
 
     bool verbose_ids{false};
 };
 
 void run_program(cmd_arguments const & arguments)
 {
+    // Initial random generator
+    // -> Use random_device if seed is 0
     std::random_device rd;
-    std::mt19937_64 rng(rd());
+    auto seed = arguments.seed;
+    if (seed == 0) {
+        seed = rd();
+    }
+    std::mt19937_64 rng(seed);
     std::uniform_int_distribution<uint32_t> read_error_position_dis(0, arguments.read_length - 1);
     std::uniform_int_distribution<uint8_t> dna4_rank_dis(0, 3);
 
@@ -135,6 +142,10 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
                       '\0',
                       "number_of_haplotypes",
                       "The number of haplotypes.");
+    parser.add_option(arguments.seed,
+                      '\0',
+                      "seed",
+                      "Seed of the random generator. 0 means random device is being used.");
     parser.add_flag(arguments.verbose_ids,
         '\0',
         "verbose-ids",
