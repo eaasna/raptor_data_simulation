@@ -31,5 +31,10 @@
 *.out
 *.app
 
+<<<<<<< HEAD
 # CMake
 build/
+=======
+# Build files
+build/*
+>>>>>>> 8c728c6332672cd9367741e59628221999c8a9e5
