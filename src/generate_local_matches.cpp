@@ -3,6 +3,7 @@
 #include <seqan3/argument_parser/all.hpp>
 #include <seqan3/io/sequence_file/input.hpp>
 #include <seqan3/io/sequence_file/output.hpp>
+#include <seqan3/alphabet/views/complement.hpp>
 
 struct my_traits : seqan3::sequence_file_input_default_traits_dna
 {
@@ -18,6 +19,7 @@ struct cmd_arguments
     uint32_t max_match_length{200u};
     uint32_t total_num_matches{1ULL<<20};
     uint64_t ref_len;
+    bool reverse{false};
     uint32_t seed{42};
 
     bool verbose_ids{false};
@@ -45,16 +47,19 @@ void run_program(cmd_arguments const & arguments)
     seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fin{arguments.ref_path};
     seqan3::sequence_file_output fout{out_file};
 
-    for (auto const & [seq, reference_name] : fin)
-    {
-	uint32_t num_matches;
-	if (seq.size() < arguments.ref_len - 1)  // if more than one chromosome
-	    num_matches = std::round(arguments.total_num_matches * (double) seq.size() / (double) arguments.ref_len);
-	else 
-	    num_matches = arguments.total_num_matches;
+    uint32_t num_matches = arguments.total_num_matches;
+    if (arguments.reverse)
+        num_matches = arguments.total_num_matches / 2;
 
-        uint64_t const reference_length = std::ranges::size(seq);
-        std::uniform_int_distribution<uint64_t> match_start_dis(0, reference_length - arguments.max_match_length);
+
+    auto sample_matches = [&](auto const & seq, auto const & reference_name, uint32_t const & num_matches)
+    {
+        uint64_t const seq_len = std::ranges::size(seq);
+        uint32_t per_seq_matches = num_matches;
+        if (seq.size() < arguments.ref_len - 1)  // if more than one chromosome
+            per_seq_matches = std::round(num_matches * (double) seq_len / (double) arguments.ref_len);
+
+        std::uniform_int_distribution<uint64_t> match_start_dis(0, seq_len - arguments.max_match_length);
         for (uint32_t current_match_number = 0; current_match_number < num_matches; ++current_match_number, ++match_counter)
         {
             uint32_t match_length = match_len_dis(rng);
@@ -82,6 +87,8 @@ void run_program(cmd_arguments const & arguments)
             if (arguments.verbose_ids)
             {
                 meta_info += ' ';
+                if (arguments.reverse)
+                    meta_info += "reverse,";
                 meta_info += "start_position=" + std::to_string(match_start_pos);
                 meta_info += ",length=" + std::to_string(match_length);
                 meta_info += ",errors=" + std::to_string(max_errors);
@@ -89,6 +96,21 @@ void run_program(cmd_arguments const & arguments)
                 meta_info += ",reference_file='" + std::string{arguments.ref_path} + "'";
             }
             fout.emplace_back(match, query_id + meta_info, quality);
+        }
+    };
+
+    for (auto const & [seq, reference_name] : fin)
+        sample_matches(seq, reference_name, num_matches);
+
+    if (arguments.reverse)
+    {
+        seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fin{arguments.ref_path};
+        for (auto const & [seq, reference_name] : fin)
+        {
+            std::vector<seqan3::dna4> compl_seq;
+            for (auto const & c : seq | std::views::reverse | seqan3::views::complement)
+                compl_seq.emplace_back(c);
+            sample_matches(compl_seq, reference_name, num_matches);
         }
     }
 }
@@ -110,9 +132,9 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
     parser.add_option(arguments.max_error_rate,
                       '\0',
                       "max-error-rate",
-                      "The maximum number of errors.", 
-                      seqan3::option_spec::required, 
-		      seqan3::arithmetic_range_validator{0, 1});
+                      "The maximum number of errors.",
+                      seqan3::option_spec::required,
+		              seqan3::arithmetic_range_validator{0, 1});
 
     parser.add_option(arguments.min_match_length,
                       '\0',
@@ -130,15 +152,19 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
                       '\0',
                       "ref-len",
                       "Length of the reference.",
-		                  seqan3::option_spec::required);
+		              seqan3::option_spec::required);
+    parser.add_flag(arguments.reverse,
+                    'r',
+                    "reverse",
+                    "Also simulate matches from reverse strand.");
     parser.add_option(arguments.seed,
-                      '\0',
-                      "seed",
-                      "Seed for random generator.");
+                    '\0',
+                    "seed",
+                    "Seed for random generator.");
     parser.add_flag(arguments.verbose_ids,
-                      '\0',
-                      "verbose-ids",
-                      "Puts position information into the ID (where the match was sampled from)");
+                    '\0',
+                    "verbose-ids",
+                    "Puts position information into the ID (where the match was sampled from)");
 }
 
 int main(int argc, char ** argv)
