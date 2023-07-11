@@ -52,7 +52,7 @@ void run_program(cmd_arguments const & arguments)
         num_matches = arguments.total_num_matches / 2;
 
 
-    auto sample_matches = [&](auto const & seq, auto const & reference_name, uint32_t const & num_matches)
+    auto sample_matches = [&](auto const & seq, auto const & reference_name, uint32_t const & num_matches, bool const reverse = false)
     {
         uint64_t const seq_len = std::ranges::size(seq);
         uint32_t per_seq_matches = num_matches;
@@ -87,7 +87,7 @@ void run_program(cmd_arguments const & arguments)
             if (arguments.verbose_ids)
             {
                 meta_info += ' ';
-                if (arguments.reverse)
+                if (reverse)
                     meta_info += "reverse,";
                 meta_info += "start_position=" + std::to_string(match_start_pos);
                 meta_info += ",length=" + std::to_string(match_length);
@@ -110,7 +110,7 @@ void run_program(cmd_arguments const & arguments)
             std::vector<seqan3::dna4> compl_seq;
             for (auto const & c : seq | std::views::reverse | seqan3::views::complement)
                 compl_seq.emplace_back(c);
-            sample_matches(compl_seq, reference_name, num_matches);
+            sample_matches(compl_seq, reference_name, num_matches, true);
         }
     }
 }
