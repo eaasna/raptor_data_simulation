@@ -3,7 +3,7 @@
 #include <seqan3/argument_parser/all.hpp>
 #include <seqan3/io/sequence_file/input.hpp>
 #include <seqan3/io/sequence_file/output.hpp>
-#include <seqan3/alphabet/views/complement.hpp>
+#include <seqan3/range/views/complement.hpp>
 
 struct my_traits : seqan3::sequence_file_input_default_traits_dna
 {
