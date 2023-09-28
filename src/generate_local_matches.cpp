@@ -115,7 +115,7 @@ void run_program(cmd_arguments const & arguments)
     if (!arguments.query_path.empty())
     {
         seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fquery{arguments.query_path};
-        uint64_t total_query_len;
+        uint64_t total_query_len{0};
 
         std::vector<seqan3::dna4_vector> query_sequences;
         std::vector<std::string> query_ids;
@@ -140,7 +140,7 @@ void run_program(cmd_arguments const & arguments)
             auto loc = insertion_locations[i];
             auto [match, match_id] = matches[i];
             auto & seq = query_sequences[j];
-            if (loc - elapsed_length > seq.size())
+            if (loc - elapsed_length + match.size() >= seq.size())
             {
                 elapsed_length += seq.size();
                 j++;
@@ -148,7 +148,7 @@ void run_program(cmd_arguments const & arguments)
             else
             {
                 for (size_t l{0}; l < match.size(); l++)
-                    seq[loc + l] = match[l];
+                    seq[loc - elapsed_length + l] = match[l];
             }
         }
 
