@@ -1,10 +1,11 @@
 #include <random>
+#include <ranges>
 
 #include <seqan3/argument_parser/all.hpp>
 #include <seqan3/core/algorithm/detail/execution_handler_parallel.hpp>
 #include <seqan3/io/sequence_file/input.hpp>
 #include <seqan3/io/sequence_file/output.hpp>
-#include <seqan3/range/views/chunk.hpp>
+#include <seqan3/utility/views/chunk.hpp>
 
 struct cmd_arguments
 {
@@ -106,9 +107,11 @@ void run_program(cmd_arguments const & arguments)
                     ++current_read_number, ++read_counter, ++bin_read_counter)
                 {
                     uint64_t const read_start_pos = read_start_dis(rng);
-                    std::vector<seqan3::dna4> read = seq
-                                                   | seqan3::views::slice(read_start_pos, read_start_pos + arguments.read_length)
-                                                   | seqan3::views::to<std::vector>;
+
+                    std::vector<seqan3::dna4> read;
+
+                    for (auto & n : seq | seqan3::views::slice(read_start_pos, read_start_pos + arguments.read_length))
+                        read.push_back(n);
 
                     for (uint8_t error_count = 0; error_count < arguments.errors; ++error_count)
                     {

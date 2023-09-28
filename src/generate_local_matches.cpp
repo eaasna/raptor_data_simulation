@@ -1,9 +1,10 @@
 #include <random>
+#include <ranges>
 
 #include <seqan3/argument_parser/all.hpp>
 #include <seqan3/io/sequence_file/input.hpp>
 #include <seqan3/io/sequence_file/output.hpp>
-#include <seqan3/range/views/complement.hpp>
+#include <seqan3/alphabet/views/complement.hpp>
 
 struct my_traits : seqan3::sequence_file_input_default_traits_dna
 {
@@ -14,6 +15,7 @@ struct cmd_arguments
 {
     std::filesystem::path ref_path{};
     std::filesystem::path out_path{};
+    std::filesystem::path query_path{};
     double max_error_rate{0.01};
     uint32_t min_match_length{50u};
     uint32_t max_match_length{200u};
@@ -40,17 +42,19 @@ void run_program(cmd_arguments const & arguments)
                                                {
                                                    std::filesystem::path out_file = arguments.out_path;
                                                    out_file /= arguments.ref_path.stem();
-                                                   out_file += ".fastq";
+                                                   out_file += ".fasta";
                                                    return out_file;
                                                }();
 
-    seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fin{arguments.ref_path};
-    seqan3::sequence_file_output fout{out_file};
+    seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fref{arguments.ref_path};
 
     uint32_t num_matches = arguments.total_num_matches;
     if (arguments.reverse)
         num_matches = arguments.total_num_matches / 2;
 
+    using record_type = typename decltype(fref)::record_type;
+    std::vector<record_type> matches;
+    matches.reserve(arguments.total_num_matches);
 
     auto sample_matches = [&](auto const & seq, auto const & reference_name, uint32_t const & num_matches, bool const reverse = false)
     {
@@ -63,12 +67,11 @@ void run_program(cmd_arguments const & arguments)
         for (uint32_t current_match_number = 0; current_match_number < num_matches; ++current_match_number, ++match_counter)
         {
             uint32_t match_length = match_len_dis(rng);
-            std::vector<seqan3::phred42> const quality(match_length, seqan3::assign_rank_to(40u, seqan3::phred42{}));
             std::uniform_int_distribution<uint32_t> match_error_position_dis(0, match_length - 1);
             uint64_t const match_start_pos = match_start_dis(rng);
-            std::vector<seqan3::dna4> match = seq |
-                                              seqan3::views::slice(match_start_pos, match_start_pos + match_length) |
-                                              seqan3::views::to<std::vector>;
+            std::vector<seqan3::dna4> match;
+            for (auto & n : seq | seqan3::views::slice(match_start_pos, match_start_pos + match_length))
+                match.push_back(n);
 
             uint32_t max_errors = (int) (match_length * arguments.max_error_rate);  // convert error rate to error count and round down
             for (uint8_t error_count = 0; error_count < max_errors; ++error_count)
@@ -95,22 +98,67 @@ void run_program(cmd_arguments const & arguments)
                 meta_info += ",reference_id='" + reference_name + "'";
                 meta_info += ",reference_file='" + std::string{arguments.ref_path} + "'";
             }
-            fout.emplace_back(match, query_id + meta_info, quality);
+            matches.emplace_back(match, query_id + meta_info);
         }
     };
 
-    for (auto const & [seq, reference_name] : fin)
+    for (auto const & [seq, reference_name] : fref)
         sample_matches(seq, reference_name, num_matches);
 
     if (arguments.reverse)
     {
-        seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fin{arguments.ref_path};
-        for (auto const & [seq, reference_name] : fin)
+        seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fref{arguments.ref_path};
+        for (auto const & [seq, reference_name] : fref)
         {
             std::vector<seqan3::dna4> compl_seq;
             for (auto const & c : seq | std::views::reverse | seqan3::views::complement)
                 compl_seq.emplace_back(c);
             sample_matches(compl_seq, reference_name, num_matches, true);
+        }
+    }
+
+    seqan3::sequence_file_output fout{out_file};
+    for (auto & match : matches)
+        fout.push_back(match);
+
+    if (!arguments.query_path.empty())
+    {
+        seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fquery{arguments.query_path};
+        uint64_t total_query_len;
+
+        std::vector<seqan3::dna4_vector> query_sequences;
+        std::vector<std::string> query_ids;
+        for (auto & [seq, query_name] : fquery)
+        {
+            total_query_len += seq.size();
+            query_sequences.emplace_back(std::move(seq));
+            query_ids.emplace_back(std::move(query_name));
+        }
+
+        std::uniform_int_distribution<> match_insertion_loc_dis(0, total_query_len - arguments.max_match_length);
+        std::vector<uint64_t> insertion_locations{};
+        for (uint32_t i = 0; i < arguments.total_num_matches; i++)
+            insertion_locations.push_back(match_insertion_loc_dis(rng));
+
+        std::sort(insertion_locations.begin(), insertion_locations.end());
+
+        uint64_t elapsed_length{0};
+        size_t j{0};
+        for (uint32_t i = 0; i < arguments.total_num_matches; i++)
+        {
+            auto loc = insertion_locations[i];
+            auto [match, match_id] = matches[i];
+            auto & seq = query_sequences[j];
+            if (loc - elapsed_length > seq.size())
+            {
+                elapsed_length += seq.size();
+                j++;
+            }
+            else
+            {
+                for (size_t l{0}; l < match.size(); l++)
+                    seq[loc + l] = match[l];
+            }
         }
     }
 }
@@ -127,8 +175,12 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
     parser.add_option(arguments.out_path,
                       '\0',
                       "output",
-                      "Provide the base dir where the matchs should be written to.",
+                      "Provide the path to the local alignment FASTA output.",
                       seqan3::option_spec::required);
+    parser.add_option(arguments.query_path,
+                      '\0',
+                      "query",
+                      "Provide the query sequence where the local matches should be inserted into.");
     parser.add_option(arguments.max_error_rate,
                       '\0',
                       "max-error-rate",

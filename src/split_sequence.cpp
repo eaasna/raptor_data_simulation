@@ -1,10 +1,10 @@
-#include <seqan3/std/filesystem>
+#include <filesystem>
 
 #include <seqan3/argument_parser/all.hpp>
 #include <seqan3/alphabet/nucleotide/dna4.hpp>
 #include <seqan3/io/sequence_file/input.hpp>
 #include <seqan3/io/sequence_file/output.hpp>
-#include <seqan3/range/views/chunk.hpp>
+#include <seqan3/utility/views/chunk.hpp>
 
 struct dna4_traits : seqan3::sequence_file_input_default_traits_dna
 {
