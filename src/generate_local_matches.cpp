@@ -14,7 +14,8 @@ struct my_traits : seqan3::sequence_file_input_default_traits_dna
 struct cmd_arguments
 {
     std::filesystem::path ref_path{};
-    std::filesystem::path out_path{};
+    std::filesystem::path matches_out_path{};
+    std::filesystem::path genome_out_path{};
     std::filesystem::path query_path{};
     double max_error_rate{0.01};
     uint32_t min_match_length{50u};
@@ -36,16 +37,6 @@ void run_program(cmd_arguments const & arguments)
     std::uniform_int_distribution<> match_len_dis(arguments.min_match_length, arguments.max_match_length);
 
     uint32_t match_counter{};
-
-    // Immediately invoked initialising lambda expession (IIILE).
-    std::filesystem::path const out_file = [&]
-                                               {
-                                                   std::filesystem::path out_file = arguments.out_path;
-                                                   out_file /= arguments.ref_path.stem();
-                                                   out_file += ".fasta";
-                                                   return out_file;
-                                               }();
-
     seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fref{arguments.ref_path};
 
     uint32_t num_matches = arguments.total_num_matches;
@@ -117,9 +108,9 @@ void run_program(cmd_arguments const & arguments)
         }
     }
 
-    seqan3::sequence_file_output fout{out_file};
+    seqan3::sequence_file_output fout_matches{arguments.matches_out_path};
     for (auto & match : matches)
-        fout.push_back(match);
+        fout_matches.push_back(match);
 
     if (!arguments.query_path.empty())
     {
@@ -160,6 +151,13 @@ void run_program(cmd_arguments const & arguments)
                     seq[loc + l] = match[l];
             }
         }
+
+
+        seqan3::sequence_file_output fout_genome{arguments.genome_out_path};
+        for (size_t i{0}; i < query_sequences.size(); i++)
+            fout_genome.emplace_back(query_sequences[i], query_ids[i]);
+
+
     }
 }
 
@@ -172,9 +170,14 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
     parser.info.examples = {"./generate_local_matches --output ./matches_e2 ./big_dataset/64/bins/bin_{00..63}.fasta"};
     parser.add_positional_option(arguments.ref_path,
                                  "Provide path to reference sequence.");
-    parser.add_option(arguments.out_path,
+    parser.add_option(arguments.matches_out_path,
                       '\0',
-                      "output",
+                      "matches-out",
+                      "Provide the path to the local alignment FASTA output.",
+                      seqan3::option_spec::required);
+    parser.add_option(arguments.genome_out_path,
+                      '\0',
+                      "genome-out",
                       "Provide the path to the local alignment FASTA output.",
                       seqan3::option_spec::required);
     parser.add_option(arguments.query_path,
