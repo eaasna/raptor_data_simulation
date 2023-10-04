@@ -22,6 +22,7 @@ struct cmd_arguments
     uint64_t seed{0}; // seed for random generator (0 means random device is being used)
 
     bool verbose_ids{false};
+    bool single_genome{false};
 };
 
 void run_program(cmd_arguments const & arguments)
@@ -30,44 +31,40 @@ void run_program(cmd_arguments const & arguments)
     // -> Use random_device if seed is 0
     std::random_device rd;
     auto seed = arguments.seed;
-    if (seed == 0) {
+    if (seed == 0)
         seed = rd();
-    }
+    
     std::mt19937_64 rng(seed);
     std::uniform_int_distribution<uint32_t> read_error_position_dis(0, arguments.read_length - 1);
     std::uniform_int_distribution<uint8_t> dna4_rank_dis(0, 3);
 
-    size_t const number_of_bins{arguments.bin_path.size()};
-    uint32_t const reads_per_bin = arguments.number_of_reads / number_of_bins;
-    uint32_t const reads_per_haplotype = reads_per_bin / arguments.number_of_haplotypes;
-    uint32_t read_counter{};
-    // uint64_t bin_counter{};
-
-    std::vector<seqan3::phred42> const quality(arguments.read_length, seqan3::assign_rank_to(40u, seqan3::phred42{}));
-
-    for (auto const bin_file : arguments.bin_path)
+    if (arguments.single_genome)
     {
-        // std::cerr << "Processing bin " << ++bin_counter << " of " << number_of_bins << '\n';
+	uint64_t ref_len{0}; 
+        seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fin_len{arguments.bin_path[0]};
+        for (auto const & [seq, reference_name] : fin_len)
+	    ref_len += seq.size();
+	
 
-        // Immediately invoked initialising lambda expession (IIILE).
+        seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fin{arguments.bin_path[0]};
         std::filesystem::path const out_file = [&]
                                                {
                                                    std::filesystem::path out_file = arguments.out_path;
-                                                   out_file /= bin_file.stem();
+                                                   out_file /= arguments.bin_path[0].stem();
                                                    out_file += ".fastq";
                                                    return out_file;
                                                }();
+        uint32_t read_counter{};
+        // uint64_t bin_counter{};
 
-        seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fin{bin_file};
+        std::vector<seqan3::phred42> const quality(arguments.read_length, seqan3::assign_rank_to(40u, seqan3::phred42{}));
+
         seqan3::sequence_file_output fout{out_file};
-
-        uint16_t haplotype_counter{};
-
         for (auto const & [seq, reference_name] : fin)
         {
-            uint64_t const reference_length = std::ranges::size(seq);
-            std::uniform_int_distribution<uint64_t> read_start_dis(0, reference_length - arguments.read_length);
-            for (uint32_t current_read_number = 0; current_read_number < reads_per_haplotype; ++current_read_number, ++read_counter)
+	    uint64_t const reads_per_chr = std::round((float) seq.size() / (float) ref_len * arguments.number_of_reads);
+            std::uniform_int_distribution<uint64_t> read_start_dis(0, seq.size() - arguments.read_length);
+            for (uint32_t current_read_number = 0; current_read_number < reads_per_chr; ++current_read_number, ++read_counter)
             {
                 uint64_t const read_start_pos = read_start_dis(rng);
                 std::vector<seqan3::dna4> read;
@@ -94,18 +91,83 @@ void run_program(cmd_arguments const & arguments)
                     meta_info += ",length=" + std::to_string(arguments.read_length);
                     meta_info += ",errors=" + std::to_string(arguments.max_errors);
                     meta_info += ",reference_id='" + reference_name + "'";
-                    meta_info += ",reference_file='" + std::string{bin_file} + "'";
                 }
                 fout.emplace_back(read, query_id + meta_info, quality);
             }
-            ++haplotype_counter;
         }
+    }
+    else
+    {
+        size_t const number_of_bins{arguments.bin_path.size()};
+        uint32_t const reads_per_bin = arguments.number_of_reads / number_of_bins;
+        uint32_t const reads_per_haplotype = reads_per_bin / arguments.number_of_haplotypes;
+        uint32_t read_counter{};
+        // uint64_t bin_counter{};
 
-        if (haplotype_counter != arguments.number_of_haplotypes)
-            std::cerr << "[WARNING] There are not enough / too many haplotypes in the file " << bin_file.string() << '\n'
+        std::vector<seqan3::phred42> const quality(arguments.read_length, seqan3::assign_rank_to(40u, seqan3::phred42{}));
+
+        for (auto const bin_file : arguments.bin_path)
+        {
+            // std::cerr << "Processing bin " << ++bin_counter << " of " << number_of_bins << '\n';
+
+            // Immediately invoked initialising lambda expession (IIILE).
+            std::filesystem::path const out_file = [&]
+            {
+                std::filesystem::path out_file = arguments.out_path;
+                                                   out_file /= bin_file.stem();
+                                                   out_file += ".fastq";
+                                                   return out_file;
+            }();
+
+            seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fin{bin_file};
+            seqan3::sequence_file_output fout{out_file};
+
+            uint16_t haplotype_counter{};
+
+            for (auto const & [seq, reference_name] : fin)
+            {
+                uint64_t const reference_length = std::ranges::size(seq);
+                std::uniform_int_distribution<uint64_t> read_start_dis(0, reference_length - arguments.read_length);
+                for (uint32_t current_read_number = 0; current_read_number < reads_per_haplotype; ++current_read_number, ++read_counter)
+                {
+                    uint64_t const read_start_pos = read_start_dis(rng);
+                    std::vector<seqan3::dna4> read;
+                    for (auto & n : seq | seqan3::views::slice(read_start_pos, read_start_pos + arguments.read_length))
+                        read.push_back(n);
+
+                    for (uint8_t error_count = 0; error_count < arguments.max_errors; ++error_count)
+                    {
+                        uint32_t const error_pos = read_error_position_dis(rng);
+                        seqan3::dna4 const current_base = read[error_pos];
+                        seqan3::dna4 new_base = current_base;
+                        while (new_base == current_base)
+                            seqan3::assign_rank_to(dna4_rank_dis(rng), new_base);
+                        read[error_pos] = new_base;
+                    }
+
+                    std::string query_id = std::to_string(read_counter);
+                    std::string meta_info{};
+
+                    if (arguments.verbose_ids)
+                    {
+                        meta_info += ' ';
+                        meta_info += "start_position=" + std::to_string(read_start_pos);
+                        meta_info += ",length=" + std::to_string(arguments.read_length);
+                        meta_info += ",errors=" + std::to_string(arguments.max_errors);
+                        meta_info += ",reference_id='" + reference_name + "'";
+                        meta_info += ",reference_file='" + std::string{bin_file} + "'";
+                    }
+                    fout.emplace_back(read, query_id + meta_info, quality);
+                }
+                ++haplotype_counter;
+            }
+
+            if (haplotype_counter != arguments.number_of_haplotypes && !arguments.single_genome)
+                std::cerr << "[WARNING] There are not enough / too many haplotypes in the file " << bin_file.string() << '\n'
                       << "[WARNING] Your total read count will be incorrect.\n"
                       << "[WARNING] Haplotypes in file: " << haplotype_counter << '\n'
                       << "[WARNING] Haplotypes expected: " << arguments.number_of_haplotypes << '\n';
+        }
     }
 }
 
@@ -151,6 +213,10 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
         '\0',
         "verbose-ids",
         "Puts Position Information into the ID (where the read was sampled from)");
+    parser.add_flag(arguments.single_genome,
+        '\0',
+        "genome",
+        "Simulate reads for a genome with records of different length.");
 }
 
 int main(int argc, char ** argv)
@@ -182,9 +248,11 @@ int main(int argc, char ** argv)
     if (arguments.number_of_reads % number_of_bins)
         throw seqan3::argument_parser_error{"The number of reads must distribute evenly over the bins."};
 
-    if ((arguments.number_of_reads / number_of_bins) % arguments.number_of_haplotypes)
-        throw seqan3::argument_parser_error{"The number of reads per bin must evenly distribute over the haplotypes."};
-
+    if (!arguments.single_genome)
+    {
+        if ((arguments.number_of_reads / number_of_bins) % arguments.number_of_haplotypes)
+            throw seqan3::argument_parser_error{"The number of reads per bin must evenly distribute over the haplotypes."};
+    }
     run_program(arguments);
 
     return 0;
