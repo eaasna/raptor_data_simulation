@@ -178,8 +178,7 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
     parser.add_option(arguments.genome_out_path,
                       '\0',
                       "genome-out",
-                      "Provide the path to the local alignment FASTA output.",
-                      seqan3::option_spec::required);
+                      "Provide the path to the local alignment FASTA output.");
     parser.add_option(arguments.query_path,
                       '\0',
                       "query",
