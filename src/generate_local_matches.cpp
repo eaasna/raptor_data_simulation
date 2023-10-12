@@ -16,6 +16,7 @@ struct cmd_arguments
 {
     std::filesystem::path ref_path{};
     std::filesystem::path matches_out_path{};
+    std::filesystem::path ground_truth_path{};
     std::filesystem::path genome_out_path{};
     std::filesystem::path query_path{};
     double max_error_rate{0.01};
@@ -85,7 +86,7 @@ void run_program(cmd_arguments const & arguments)
                 meta_info += ' ';
                 if (reverse)
                     meta_info += "reverse,";
-                meta_info += "start_position=" + std::to_string(match_start_pos);
+                meta_info += "ref_position=" + std::to_string(match_start_pos);
                 meta_info += ",length=" + std::to_string(match_length);
                 meta_info += ",errors=" + std::to_string(max_errors);
                 meta_info += ",reference_id='" + reference_name + "'";
@@ -113,6 +114,8 @@ void run_program(cmd_arguments const & arguments)
     seqan3::sequence_file_output fout_matches{arguments.matches_out_path};
     for (auto & match : matches)
         fout_matches.push_back(match);
+
+    std::ofstream truth_out(arguments.ground_truth_path); 
 
     if (!arguments.query_path.empty())
     {
@@ -146,11 +149,14 @@ void run_program(cmd_arguments const & arguments)
             {
                 elapsed_length += seq.size();
                 j++;
+                i--;
             }
             else
             {
                 for (size_t l{0}; l < match.size(); l++)
                     seq[loc - elapsed_length + l] = match[l];
+                
+                truth_out << match_id << ",query_position=" << loc - elapsed_length << '\n';
             }
         }
 
@@ -175,12 +181,19 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
     parser.add_option(arguments.matches_out_path,
                       '\0',
                       "matches-out",
-                      "Provide the path to the local alignment FASTA output.",
-                      seqan3::option_spec::required);
+                      "Provide a file for the local alignments.",
+                      seqan3::option_spec::required,
+                      seqan3::output_file_validator{seqan3::output_file_open_options::open_or_create, {"fasta", "fa"}});
     parser.add_option(arguments.genome_out_path,
                       '\0',
                       "genome-out",
-                      "Provide the path to the local alignment FASTA output.");
+                      "Provide a file for the query sequence where local alignments have been inserted.", 
+                      seqan3::option_spec::required,
+                      seqan3::output_file_validator{seqan3::output_file_open_options::open_or_create, {"fasta", "fa"}});
+    parser.add_option(arguments.genome_out_path,
+                      '\0',
+                      "truth-out",
+                      "Provide a file for the ground truth output.");
     parser.add_option(arguments.query_path,
                       '\0',
                       "query",
@@ -191,7 +204,6 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
                       "The maximum number of errors.",
                       seqan3::option_spec::required,
 		              seqan3::arithmetic_range_validator{0, 1});
-
     parser.add_option(arguments.min_match_length,
                       '\0',
                       "min-match-length",
@@ -237,6 +249,9 @@ int main(int argc, char ** argv)
         std::cout << "[Error] " << ext.what() << "\n";
         return -1;
     }
+
+    if (arguments.ground_truth_path.empty())
+        arguments.ground_truth_path = arguments.genome_out_path / ".truth";
 
     run_program(arguments);
 
