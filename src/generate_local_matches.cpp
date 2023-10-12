@@ -5,6 +5,7 @@
 #include <seqan3/io/sequence_file/input.hpp>
 #include <seqan3/io/sequence_file/output.hpp>
 #include <seqan3/alphabet/views/complement.hpp>
+#include <seqan3/core/debug_stream.hpp>
 
 struct my_traits : seqan3::sequence_file_input_default_traits_dna
 {
@@ -36,23 +37,24 @@ void run_program(cmd_arguments const & arguments)
     std::uniform_int_distribution<uint8_t> dna4_rank_dis(0, 3);
     std::uniform_int_distribution<> match_len_dis(arguments.min_match_length, arguments.max_match_length);
 
-    uint32_t match_counter{};
-    seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fref{arguments.ref_path};
-
     uint32_t num_matches = arguments.total_num_matches;
     if (arguments.reverse)
         num_matches = arguments.total_num_matches / 2;
 
+    seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fref{arguments.ref_path};
     using record_type = typename decltype(fref)::record_type;
     std::vector<record_type> matches;
     matches.reserve(arguments.total_num_matches);
 
+    uint32_t match_counter{};
     auto sample_matches = [&](auto const & seq, auto const & reference_name, uint32_t const & num_matches, bool const reverse = false)
     {
         uint64_t const seq_len = std::ranges::size(seq);
         uint32_t per_seq_matches = num_matches;
         if (seq.size() < arguments.ref_len - 1)  // if more than one chromosome
             per_seq_matches = std::round(num_matches * (double) seq_len / (double) arguments.ref_len);
+        
+        seqan3::debug_stream << "Simulating " << per_seq_matches << " matches from sequence " << reference_name << '\n'; 
 
         std::uniform_int_distribution<uint64_t> match_start_dis(0, seq_len - arguments.max_match_length);
         for (uint32_t current_match_number = 0; current_match_number < num_matches; ++current_match_number, ++match_counter)
