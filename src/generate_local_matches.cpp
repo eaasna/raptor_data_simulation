@@ -164,8 +164,6 @@ void run_program(cmd_arguments const & arguments)
         seqan3::sequence_file_output fout_genome{arguments.genome_out_path};
         for (size_t i{0}; i < query_sequences.size(); i++)
             fout_genome.emplace_back(query_sequences[i], query_ids[i]);
-
-
     }
 }
 
@@ -190,7 +188,7 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
                       "Provide a file for the query sequence where local alignments have been inserted.", 
                       seqan3::option_spec::required,
                       seqan3::output_file_validator{seqan3::output_file_open_options::open_or_create, {"fasta", "fa"}});
-    parser.add_option(arguments.genome_out_path,
+    parser.add_option(arguments.ground_truth_path,
                       '\0',
                       "truth-out",
                       "Provide a file for the ground truth output.");
