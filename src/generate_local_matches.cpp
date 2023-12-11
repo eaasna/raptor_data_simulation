@@ -5,6 +5,7 @@
 #include <seqan3/io/sequence_file/input.hpp>
 #include <seqan3/io/sequence_file/output.hpp>
 #include <seqan3/alphabet/views/complement.hpp>
+#include <seqan3/core/debug_stream.hpp>
 
 struct my_traits : seqan3::sequence_file_input_default_traits_dna
 {
@@ -15,6 +16,7 @@ struct cmd_arguments
 {
     std::filesystem::path ref_path{};
     std::filesystem::path matches_out_path{};
+    std::filesystem::path ground_truth_path{};
     std::filesystem::path genome_out_path{};
     std::filesystem::path query_path{};
     double max_error_rate{0.01};
@@ -36,23 +38,24 @@ void run_program(cmd_arguments const & arguments)
     std::uniform_int_distribution<uint8_t> dna4_rank_dis(0, 3);
     std::uniform_int_distribution<> match_len_dis(arguments.min_match_length, arguments.max_match_length);
 
-    uint32_t match_counter{};
-    seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fref{arguments.ref_path};
-
     uint32_t num_matches = arguments.total_num_matches;
     if (arguments.reverse)
         num_matches = arguments.total_num_matches / 2;
 
+    seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fref{arguments.ref_path};
     using record_type = typename decltype(fref)::record_type;
     std::vector<record_type> matches;
     matches.reserve(arguments.total_num_matches);
 
+    uint32_t match_counter{};
     auto sample_matches = [&](auto const & seq, auto const & reference_name, uint32_t const & num_matches, bool const reverse = false)
     {
         uint64_t const seq_len = std::ranges::size(seq);
         uint32_t per_seq_matches = num_matches;
         if (seq.size() < arguments.ref_len - 1)  // if more than one chromosome
             per_seq_matches = std::round(num_matches * (double) seq_len / (double) arguments.ref_len);
+        
+        seqan3::debug_stream << "Simulating " << per_seq_matches << " matches from sequence " << reference_name << '\n'; 
 
         std::uniform_int_distribution<uint64_t> match_start_dis(0, seq_len - arguments.max_match_length);
         for (uint32_t current_match_number = 0; current_match_number < num_matches; ++current_match_number, ++match_counter)
@@ -83,7 +86,7 @@ void run_program(cmd_arguments const & arguments)
                 meta_info += ' ';
                 if (reverse)
                     meta_info += "reverse,";
-                meta_info += "start_position=" + std::to_string(match_start_pos);
+                meta_info += "ref_position=" + std::to_string(match_start_pos);
                 meta_info += ",length=" + std::to_string(match_length);
                 meta_info += ",errors=" + std::to_string(max_errors);
                 meta_info += ",reference_id='" + reference_name + "'";
@@ -111,6 +114,8 @@ void run_program(cmd_arguments const & arguments)
     seqan3::sequence_file_output fout_matches{arguments.matches_out_path};
     for (auto & match : matches)
         fout_matches.push_back(match);
+
+    std::ofstream truth_out(arguments.ground_truth_path); 
 
     if (!arguments.query_path.empty())
     {
@@ -144,11 +149,14 @@ void run_program(cmd_arguments const & arguments)
             {
                 elapsed_length += seq.size();
                 j++;
+                i--;
             }
             else
             {
                 for (size_t l{0}; l < match.size(); l++)
                     seq[loc - elapsed_length + l] = match[l];
+                
+                truth_out << match_id << ",query_position=" << loc - elapsed_length << '\n';
             }
         }
 
@@ -156,8 +164,6 @@ void run_program(cmd_arguments const & arguments)
         seqan3::sequence_file_output fout_genome{arguments.genome_out_path};
         for (size_t i{0}; i < query_sequences.size(); i++)
             fout_genome.emplace_back(query_sequences[i], query_ids[i]);
-
-
     }
 }
 
@@ -173,12 +179,19 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
     parser.add_option(arguments.matches_out_path,
                       '\0',
                       "matches-out",
-                      "Provide the path to the local alignment FASTA output.",
-                      seqan3::option_spec::required);
+                      "Provide a file for the local alignments.",
+                      seqan3::option_spec::required,
+                      seqan3::output_file_validator{seqan3::output_file_open_options::open_or_create, {"fasta", "fa"}});
     parser.add_option(arguments.genome_out_path,
                       '\0',
                       "genome-out",
-                      "Provide the path to the local alignment FASTA output.");
+                      "Provide a file for the query sequence where local alignments have been inserted.", 
+                      seqan3::option_spec::required,
+                      seqan3::output_file_validator{seqan3::output_file_open_options::open_or_create, {"fasta", "fa"}});
+    parser.add_option(arguments.ground_truth_path,
+                      '\0',
+                      "truth-out",
+                      "Provide a file for the ground truth output.");
     parser.add_option(arguments.query_path,
                       '\0',
                       "query",
@@ -189,7 +202,6 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
                       "The maximum number of errors.",
                       seqan3::option_spec::required,
 		              seqan3::arithmetic_range_validator{0, 1});
-
     parser.add_option(arguments.min_match_length,
                       '\0',
                       "min-match-length",
@@ -235,6 +247,9 @@ int main(int argc, char ** argv)
         std::cout << "[Error] " << ext.what() << "\n";
         return -1;
     }
+
+    if (arguments.ground_truth_path.empty())
+        arguments.ground_truth_path = arguments.genome_out_path / ".truth";
 
     run_program(arguments);
 
