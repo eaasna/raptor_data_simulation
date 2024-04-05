@@ -164,9 +164,10 @@ void run_program(cmd_arguments const & arguments)
             {
                 seq[loc - elapsed_length + l] = match[l];
                 mut_mask[loc + l] = 1;
-                std::cout << std::to_string(loc) << '\t' << std::to_string(elapsed_length) << '\t' 
+                /*std::cout << std::to_string(loc) << '\t' << std::to_string(elapsed_length) << '\t' 
                           << std::to_string(l) << '\t' <<  std::to_string(loc - elapsed_length + l) << '\t' 
                           << match[l].to_char() << '\t' << seq[loc - elapsed_length + l].to_char() << '\t' << query_sequences[query_ind][loc - elapsed_length + query_ind].to_char() << '\n';
+                */
             }
         }
 
