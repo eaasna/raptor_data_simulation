@@ -120,40 +120,55 @@ void run_program(cmd_arguments const & arguments)
         uint64_t total_query_len{0};
 
         std::vector<seqan3::dna4_vector> query_sequences;
-        std::vector<std::string> query_ids;
+        std::vector<std::string> query_ids;    
         for (auto & [seq, query_name] : fquery)
         {
             total_query_len += seq.size();
             query_sequences.emplace_back(std::move(seq));
             query_ids.emplace_back(std::move(query_name));
         }
+        std::vector<bool> mut_mask(total_query_len, 0);
 
         std::uniform_int_distribution<> match_insertion_loc_dis(0, total_query_len - arguments.max_match_length);
-        std::vector<uint64_t> insertion_locations{};
-        for (uint32_t i = 0; i < arguments.total_num_matches; i++)
-            insertion_locations.push_back(match_insertion_loc_dis(rng));
-
-        std::sort(insertion_locations.begin(), insertion_locations.end());
-
-        uint64_t elapsed_length{0};
-        size_t j{0};
         for (uint32_t i = 0; i < arguments.total_num_matches; i++)
         {
-            auto loc = insertion_locations[i];
+            uint8_t failure_counter{0};
+            uint64_t elapsed_length{0};
+            size_t query_ind{0};
+
+            auto loc = match_insertion_loc_dis(rng);
             auto [match, match_id] = matches[i];
-            auto & seq = query_sequences[j];
-            if (loc - elapsed_length + match.size() >= seq.size())
+
+            while (std::any_of(mut_mask.begin() + loc, 
+                               mut_mask.begin() + loc + match.size(), 
+                               [](bool x) { return x; }))
             {
-                elapsed_length += seq.size();
-                j++;
+                loc = match_insertion_loc_dis(rng);
+                failure_counter++;
+                if (failure_counter > 10)
+                    throw std::runtime_error("Can not insert another local match without overlapping existing ones.");
             }
-            else
+            
+            while (loc - elapsed_length + match.size() >= query_sequences[query_ind].size())
             {
-                for (size_t l{0}; l < match.size(); l++)
-                    seq[loc - elapsed_length + l] = match[l];
+                elapsed_length += query_sequences[query_ind].size();
+                query_ind++;
+            }
+            
+            auto & seq = query_sequences[query_ind];
+            for (auto & nuc : match)
+                std::cout << nuc.to_char();
+
+            std::cout << '\n' << match_id << '\n';
+            for (size_t l{0}; l < match.size(); l++)
+            {
+                seq[loc - elapsed_length + l] = match[l];
+                mut_mask[loc + l] = 1;
+                std::cout << std::to_string(loc) << '\t' << std::to_string(elapsed_length) << '\t' 
+                          << std::to_string(l) << '\t' <<  std::to_string(loc - elapsed_length + l) << '\t' 
+                          << match[l].to_char() << '\t' << seq[loc - elapsed_length + l].to_char() << '\t' << query_sequences[query_ind][loc - elapsed_length + query_ind].to_char() << '\n';
             }
         }
-
 
         seqan3::sequence_file_output fout_genome{arguments.genome_out_path};
         for (size_t i{0}; i < query_sequences.size(); i++)
