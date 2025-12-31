@@ -101,6 +101,9 @@ void run_program(cmd_arguments const & arguments)
 
     if (arguments.reverse)
     {
+        if (num_matches * 2 < arguments.total_num_matches)
+            num_matches++;
+
         seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fref{arguments.ref_path};
         for (auto const & [seq, reference_name] : fref)
         {
@@ -115,8 +118,7 @@ void run_program(cmd_arguments const & arguments)
     for (auto & match : matches)
         fout_matches.push_back(match);
 
-    std::ofstream truth_out(arguments.ground_truth_path); 
-
+    std::ofstream truth_out(arguments.ground_truth_path);
     if (!arguments.query_path.empty())
     {
         seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fquery{arguments.query_path};
@@ -131,7 +133,7 @@ void run_program(cmd_arguments const & arguments)
             query_ids.emplace_back(std::move(query_name));
         }
 
-        std::uniform_int_distribution<> match_insertion_loc_dis(0, total_query_len - arguments.max_match_length);
+        std::uniform_int_distribution<> match_insertion_loc_dis(0, total_query_len - 1);
         std::vector<uint64_t> insertion_locations{};
         for (uint32_t i = 0; i < arguments.total_num_matches; i++)
             insertion_locations.push_back(match_insertion_loc_dis(rng));
@@ -140,22 +142,26 @@ void run_program(cmd_arguments const & arguments)
 
         uint64_t elapsed_length{0};
         size_t j{0};
+        uint64_t inserted_length{0};
         for (uint32_t i = 0; i < arguments.total_num_matches; i++)
         {
-            auto loc = insertion_locations[i];
+            auto loc = insertion_locations[i] + inserted_length;
             auto [match, match_id] = matches[i];
             auto & seq = query_sequences[j];
-            if (loc - elapsed_length + match.size() >= seq.size())
+            if (loc - elapsed_length >= seq.size())
             {
                 elapsed_length += seq.size();
                 j++;
                 i--;
+                inserted_length = 0;
             }
             else
             {
-                for (size_t l{0}; l < match.size(); l++)
-                    seq[loc - elapsed_length + l] = match[l];
-                
+                seqan3::dna4_vector with_insertion(seq.begin(), seq.begin() + loc - elapsed_length);
+                with_insertion.insert(with_insertion.end(), match.begin(), match.end());
+                with_insertion.insert(with_insertion.end(), seq.begin() + loc - elapsed_length, seq.end());
+                query_sequences[j] = with_insertion;
+                inserted_length += match.size();
                 truth_out << match_id << ",query_position=" << loc - elapsed_length << '\n';
             }
         }
@@ -169,11 +175,11 @@ void run_program(cmd_arguments const & arguments)
 
 void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments & arguments)
 {
-    parser.info.author = "Enrico Seiler";
-    parser.info.author = "enrico.seiler@fu-berlin.de";
-    parser.info.short_description = "Generate local matches from reference.";
-    parser.info.version = "0.0.1";
-    parser.info.examples = {"./generate_local_matches --output ./matches_e2 ./big_dataset/64/bins/bin_{00..63}.fasta"};
+    parser.info.author = "Evelin Aasna";
+    parser.info.author = "evelin.aasna@fu-berlin.de";
+    parser.info.short_description = "Generate local matches from reference. Supply query sequence to insert matches";
+    parser.info.version = "0.0.2";
+    parser.info.examples = {"./generate_local_matches --matches-out matches_e0.fasta --genome-out query_e0.fasta --num-matches 5 --ref-len 1024 --query multi_seq_ref.fasta ref.fasta"};
     parser.add_positional_option(arguments.ref_path,
                                  "Provide path to reference sequence.");
     parser.add_option(arguments.matches_out_path,
@@ -250,6 +256,12 @@ int main(int argc, char ** argv)
 
     if (arguments.ground_truth_path.empty())
         arguments.ground_truth_path = arguments.genome_out_path / ".truth";
+
+    if (arguments.min_match_length > arguments.max_match_length)
+        throw seqan3::argument_parser_error("Minimum local match length can not be larger than maximum length");
+
+    if (arguments.ref_len <= arguments.max_match_length)
+        throw seqan3::argument_parser_error("Local match length can not be larger than reference length");
 
     run_program(arguments);
 
