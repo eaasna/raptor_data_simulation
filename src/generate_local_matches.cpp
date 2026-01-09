@@ -91,7 +91,7 @@ void run_program(cmd_arguments const & arguments)
 	      				     std::normal_distribution<double>>::type;
 	start_dis_T match_start_dis = get_match_start_dis<start_dis_T>(seq.size(), arguments);
 
-	for (uint32_t current_match_number = 0; current_match_number < num_matches; ++current_match_number, ++match_counter)
+	for (uint32_t current_match_number = 0; current_match_number < per_seq_matches; ++current_match_number, ++match_counter)
         {
             uint32_t match_length = match_len_dis(rng);
             std::uniform_int_distribution<uint32_t> match_error_position_dis(0, match_length - 1);
@@ -190,7 +190,7 @@ void run_program(cmd_arguments const & arguments)
                     throw std::runtime_error("Can not insert another local match without overlapping existing ones.");
             }
             
-            while (loc - elapsed_length + match.size() >= query_sequences[query_ind].size())
+            while (loc + match.size() >= query_sequences[query_ind].size() + elapsed_length)
             {
                 elapsed_length += query_sequences[query_ind].size();
                 query_ind++;
