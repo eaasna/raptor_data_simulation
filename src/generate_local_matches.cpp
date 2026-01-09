@@ -54,11 +54,14 @@ void run_program(cmd_arguments const & arguments)
         uint32_t per_seq_matches = num_matches;
         if (seq.size() < arguments.ref_len - 1)  // if more than one chromosome
             per_seq_matches = std::round(num_matches * (double) seq_len / (double) arguments.ref_len);
-        
+      
+        /*	
+       	seqan3::debug_stream << "ref len\t" << arguments.ref_len << '\n';
+	seqan3::debug_stream << "seq.size()\t" << seq.size() << '\n';	
         seqan3::debug_stream << "Simulating " << per_seq_matches << " matches from sequence " << reference_name << '\n'; 
-
+	*/
         std::uniform_int_distribution<uint64_t> match_start_dis(0, seq_len - arguments.max_match_length);
-        for (uint32_t current_match_number = 0; current_match_number < num_matches; ++current_match_number, ++match_counter)
+        for (uint32_t current_match_number = 0; current_match_number < per_seq_matches; ++current_match_number, ++match_counter)
         {
             uint32_t match_length = match_len_dis(rng);
             std::uniform_int_distribution<uint32_t> match_error_position_dis(0, match_length - 1);
@@ -107,7 +110,7 @@ void run_program(cmd_arguments const & arguments)
             std::vector<seqan3::dna4> compl_seq;
             for (auto const & c : seq | std::views::reverse | seqan3::views::complement)
                 compl_seq.emplace_back(c);
-            sample_matches(compl_seq, reference_name, num_matches, true);
+	    sample_matches(compl_seq, reference_name, num_matches, true);
         }
     }
 
@@ -119,6 +122,7 @@ void run_program(cmd_arguments const & arguments)
 
     if (!arguments.query_path.empty())
     {
+	//seqan3::debug_stream << "Query path not empty\t" << arguments.query_path << '\n';
         seqan3::sequence_file_input<my_traits, seqan3::fields<seqan3::field::seq, seqan3::field::id>> fquery{arguments.query_path};
         uint64_t total_query_len{0};
 
@@ -127,7 +131,9 @@ void run_program(cmd_arguments const & arguments)
         for (auto & [seq, query_name] : fquery)
         {
             total_query_len += seq.size();
-            query_sequences.emplace_back(std::move(seq));
+	    //seqan3::debug_stream << "seq.size()\t" << seq.size() << '\n';
+	    query_sequences.emplace_back(std::move(seq));
+	    //seqan3::debug_stream << "Emplaced back query id\t" << query_name << '\n';
             query_ids.emplace_back(std::move(query_name));
         }
 
@@ -145,7 +151,7 @@ void run_program(cmd_arguments const & arguments)
             auto loc = insertion_locations[i];
             auto [match, match_id] = matches[i];
             auto & seq = query_sequences[j];
-            if (loc - elapsed_length + match.size() >= seq.size())
+            if (loc + match.size() + 1 >= seq.size() + elapsed_length)
             {
                 elapsed_length += seq.size();
                 j++;
@@ -154,12 +160,22 @@ void run_program(cmd_arguments const & arguments)
             else
             {
                 for (size_t l{0}; l < match.size(); l++)
+		{
+		    /*
+		    if ((seq.size() + elapsed_length) < (loc + l + 1))
+		    {
+			    seqan3::debug_stream << "seq.size\t" << seq.size() << '\n';
+			    seqan3::debug_stream << "loc - elapsed_length + l\t" << loc - elapsed_length + l<< '\n';
+			    seqan3::debug_stream << "loc\t" << loc << '\n';
+			    seqan3::debug_stream << "elapsed_length\t" << elapsed_length << '\n';
+			    seqan3::debug_stream << "l\t" << l << '\n';
+		    }
+		    */
                     seq[loc - elapsed_length + l] = match[l];
-                
+		}
                 truth_out << match_id << ",query_position=" << loc - elapsed_length << '\n';
             }
         }
-
 
         seqan3::sequence_file_output fout_genome{arguments.genome_out_path};
         for (size_t i{0}; i < query_sequences.size(); i++)
