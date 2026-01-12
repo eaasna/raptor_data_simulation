@@ -31,6 +31,7 @@ struct cmd_arguments
     bool reverse{false};
     uint32_t seed{42};
 
+    bool verbose{false};
     bool verbose_ids{false};
 };
 
@@ -80,12 +81,15 @@ void run_program(cmd_arguments const & arguments)
         uint32_t per_seq_matches = num_matches;
         if (seq.size() < arguments.ref_len - 1)  // if more than one chromosome
 	{
+	    /*
 	    seqan3::debug_stream << "seq.size()\t" << seq.size() << '\n';
 	    seqan3::debug_stream << "arguments.ref_len\t" << arguments.ref_len  << '\n';
 	    seqan3::debug_stream << "num_matches\t" << num_matches << '\n';
+	    */
 	    per_seq_matches = std::round(num_matches * (double) seq.size() / (double) arguments.ref_len);
 	}
-        seqan3::debug_stream << "Simulating " << per_seq_matches << " matches from sequence " << reference_name << '\n'; 
+        if (arguments.verbose)
+	    seqan3::debug_stream << "Simulating " << per_seq_matches << " matches from sequence " << reference_name << '\n'; 
 	using start_dis_T = std::conditional<is_uniform, 
 	      				     std::uniform_int_distribution<uint64_t>, 
 	      				     std::normal_distribution<double>>::type;
@@ -128,8 +132,6 @@ void run_program(cmd_arguments const & arguments)
             }
             matches.emplace_back(match, query_id + meta_info);
         }
-
-	seqan3::debug_stream << "emplaced_back matches\n";
     };
 
     for (auto const & [seq, reference_name] : fref)
@@ -147,13 +149,9 @@ void run_program(cmd_arguments const & arguments)
         }
     }
 
-    seqan3::debug_stream << "reversed\n";
-
     seqan3::sequence_file_output fout_matches{arguments.matches_out_path};
     for (auto & match : matches)
         fout_matches.push_back(match);
-
-    seqan3::debug_stream << "pushed_back\n";
 
     if (!arguments.query_path.empty())
     {
@@ -161,7 +159,7 @@ void run_program(cmd_arguments const & arguments)
         uint64_t total_query_len{0};
 
         std::vector<seqan3::dna4_vector> query_sequences;
-        std::vector<std::string> query_ids;    
+        std::vector<std::string> query_ids;  	
         for (auto & [seq, query_name] : fquery)
         {
             total_query_len += seq.size();
@@ -172,11 +170,10 @@ void run_program(cmd_arguments const & arguments)
         std::vector<bool> mut_mask(total_query_len, 0);
 
 	if (total_query_len < arguments.max_match_length + 1)
-	{
 	    throw std::runtime_error("The query length must be larger than the max match length.");
-	}
 	
 	std::uniform_int_distribution<> match_insertion_loc_dis(0, total_query_len - arguments.max_match_length - 1);
+	uint32_t skipped_inbetween{0};
         for (uint32_t i = 0; i < arguments.total_num_matches; i++)
         {
             uint8_t failure_counter{0};
@@ -199,18 +196,21 @@ void run_program(cmd_arguments const & arguments)
 	    bool between_sequences{false}; 
             while (loc + match.size() >= query_sequences[query_ind].size() + elapsed_length)
             {
+		/*
 		seqan3::debug_stream << "loc\t" << loc << '\n';
 	    	seqan3::debug_stream << "elapsed_length\t" << elapsed_length << '\n';
-                elapsed_length += query_sequences[query_ind].size();
+                */
+		elapsed_length += query_sequences[query_ind].size();
                 query_ind++;
+		/*
 		seqan3::debug_stream << "incremented query_ind to\t" << std::to_string(query_ind) << '\n';
 	    	seqan3::debug_stream << "elapsed_length\t" << elapsed_length << '\n';
 		seqan3::debug_stream << "match.size()\t" << match.size() << '\n';
+		*/
 		if ((loc + match.size() >= elapsed_length) &&
 	            (loc < elapsed_length))
                 {
 		    // edge case: a match locations overlaps two adjacent query sequences
-		    //throw std::runtime_error("Insertion would overlap two adjacent sequences");
 		    between_sequences = true;
 		    break;
                 }
@@ -218,17 +218,19 @@ void run_program(cmd_arguments const & arguments)
 	    if (between_sequences)
             {
 		// skip this location
-                i--;
+                skipped_inbetween++;
 		continue;
 	    }
             
             auto & seq = query_sequences[query_ind];
-	    seqan3::debug_stream << "inserting into query with length\t" << seq.size() << '\n';
 	    for (auto & nuc : match)
                 std::cout << nuc.to_char();
 
             std::cout << '\n' << match_id << '\n';
-            for (size_t l{0}; l < match.size(); l++)
+            
+	    if (arguments.verbose)
+	        seqan3::debug_stream << "loc\telapsed_length\tl\trelative pos in seq\talt allele\twild allele\tinserted allele\n";
+	    for (size_t l{0}; l < match.size(); l++)
             {
 		if (seq.size() <= loc + l - elapsed_length)
 		{
@@ -236,18 +238,23 @@ void run_program(cmd_arguments const & arguments)
 		    seqan3::debug_stream << "loc\t" << loc << '\n';
 		    seqan3::debug_stream << "l\t" << l << '\n';
 		    seqan3::debug_stream << "elapsed_length\t" << elapsed_length << '\n';
-
 		    seqan3::debug_stream << "loc + l - elapsed_length\t" << loc + l - elapsed_length << '\n';
 		    throw std::runtime_error("Insertion location out of sequence range");
 		}
                 seq[loc + l - elapsed_length] = match[l];
                 mut_mask[loc + l] = 1;
-		seqan3::debug_stream << std::to_string(loc) << '\t' << std::to_string(elapsed_length) << '\t' 
+	        if (arguments.verbose)
+		{	
+		    seqan3::debug_stream << std::to_string(loc) << '\t' << std::to_string(elapsed_length) << '\t' 
                           << std::to_string(l) << '\t' <<  std::to_string(loc + l - elapsed_length) << '\t' 
-                          << match[l].to_char() << '\t' << seq[loc + l - elapsed_length].to_char() << '\t' << query_sequences[query_ind][loc + query_ind - elapsed_length].to_char() << '\n';
+                          << match[l].to_char() << '\t' << seq[loc + l - elapsed_length].to_char() << '\t' 
+			  << query_sequences[query_ind][loc + l - elapsed_length].to_char() << '\n';
+		}
             }
         }
-
+	
+	if (skipped_inbetween > 0)
+	    seqan3::debug_stream << "Skipped " << skipped_inbetween << " insertion locations that are between sequences\n";
         seqan3::sequence_file_output fout_genome{arguments.genome_out_path};
         for (size_t i{0}; i < query_sequences.size(); i++)
             fout_genome.emplace_back(query_sequences[i], query_ids[i]);
@@ -324,6 +331,10 @@ void initialise_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
                     '\0',
                     "verbose-ids",
                     "Puts position information into the ID (where the match was sampled from)");
+    parser.add_flag(arguments.verbose,
+		    '\0',
+		    "verbose",
+		    "Output debug info");
 }
 
 int main(int argc, char ** argv)
